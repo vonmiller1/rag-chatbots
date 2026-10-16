@@ -35,3 +35,9 @@ openrouter:
   model: openai/gpt-4o-mini
   temperature: 0.1
   timeout-seconds: 60
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
