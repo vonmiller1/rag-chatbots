@@ -39,6 +39,11 @@ public class QdrantVectorStore implements VectorStore {
             return;
         } catch (WebClientResponseException.NotFound ignored) {
             // Collection does not exist yet; create it below.
+        } catch (WebClientResponseException exception) {
+            throw new IllegalStateException(
+                    "Unable to verify Qdrant collection at " + properties.baseUrl(),
+                    exception
+            );
         }
 
         CreateCollectionRequest request = new CreateCollectionRequest(
@@ -101,12 +106,25 @@ public class QdrantVectorStore implements VectorStore {
 
         return response.result().stream()
                 .map(point -> new SearchResult(
-                        String.valueOf(point.payload().get("documentName")),
-                        ((Number) point.payload().get("chunkIndex")).intValue(),
-                        String.valueOf(point.payload().get("text")),
+                        payloadString(point.payload(), "documentName"),
+                        payloadChunkIndex(point.payload()),
+                        payloadString(point.payload(), "text"),
                         point.score()
                 ))
                 .toList();
+    }
+
+    private static String payloadString(Map<String, Object> payload, String key) {
+        Object value = payload.get(key);
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static int payloadChunkIndex(Map<String, Object> payload) {
+        Object value = payload.get("chunkIndex");
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
     }
 
     private record CreateCollectionRequest(VectorParams vectors) {
