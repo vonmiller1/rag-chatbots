@@ -29,6 +29,12 @@ public class TextChunker {
                 continue;
             }
 
+            if (cleaned.length() > properties.chunkSize()) {
+                flushCurrentChunk(chunks, current);
+                chunks.addAll(splitFixedWindows(cleaned));
+                continue;
+            }
+
             if (current.length() + cleaned.length() + 2 > properties.chunkSize() && !current.isEmpty()) {
                 chunks.add(current.toString().trim());
                 current = new StringBuilder(overlapTail(current.toString()));
@@ -45,6 +51,28 @@ public class TextChunker {
         }
 
         return chunks;
+    }
+
+    private void flushCurrentChunk(List<String> chunks, StringBuilder current) {
+        if (!current.isEmpty()) {
+            chunks.add(current.toString().trim());
+            current.setLength(0);
+        }
+    }
+
+    private List<String> splitFixedWindows(String text) {
+        List<String> windows = new ArrayList<>();
+        int chunkSize = properties.chunkSize();
+        int overlap = Math.min(properties.chunkOverlap(), chunkSize - 1);
+        int step = Math.max(1, chunkSize - overlap);
+        for (int start = 0; start < text.length(); start += step) {
+            int end = Math.min(text.length(), start + chunkSize);
+            windows.add(text.substring(start, end).trim());
+            if (end >= text.length()) {
+                break;
+            }
+        }
+        return windows;
     }
 
     private String overlapTail(String text) {
