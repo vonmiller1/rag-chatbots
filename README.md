@@ -1,484 +1,181 @@
-# Spring Boot RAG Document Q&A System
+# RAG Chatbot
 
-A production-style **Retrieval-Augmented Generation (RAG)** based Document Q&A system built with **Java 21**, **Spring Boot**, **Apache PDFBox**, **Qdrant**, and **OpenRouter API**.
+A Java 21 and Spring Boot service for asking questions about uploaded PDF documents. It extracts and chunks PDF text, stores chunk vectors in Qdrant, retrieves relevant passages, and uses an OpenRouter chat model to draft an answer with source excerpts.
 
-This project allows users to upload PDF documents, convert them into searchable vector embeddings, and ask natural language questions. The system retrieves relevant document chunks and sends only that context to an LLM, helping generate answers that are grounded in the uploaded documents.
+> **Prototype note:** The current embedding implementation is a deterministic hashing baseline, not a pretrained semantic embedding model. Treat retrieval quality as a demonstration, not production-grade semantic search. See [plan.md](plan.md) for a focused improvement roadmap.
 
----
+## Features
 
-## Overview
+- PDF upload, text extraction with Apache PDFBox, and configurable text chunking
+- Vector storage and similarity search through Qdrant
+- Grounded answer generation with a configurable OpenRouter model
+- Source passages and relevance scores returned with each answer
+- Request validation, centralized API error handling, and Spring Boot Actuator health endpoint
+- OpenAPI / Swagger UI documentation
 
-This application demonstrates how to build a backend RAG system for document-based question answering.
+## Request flow
 
-Users can:
+1. `POST /upload` validates a PDF, extracts its text, splits it into chunks, and writes the chunks and vectors to Qdrant.
+2. `POST /ask` embeds the question, searches the shared Qdrant collection, and filters results by the configured relevance threshold.
+3. If relevant passages are found, the service sends them with the question to OpenRouter and returns the answer and source passages. If none pass the threshold, it returns a fixed “I don't know” answer without calling the chat model.
 
-- Upload PDF documents
-- Extract text from PDFs
-- Split text into smaller chunks
-- Generate embeddings for each chunk
-- Store embeddings in Qdrant vector database
-- Ask questions in natural language
-- Retrieve relevant chunks using semantic search
-- Send retrieved context and question to OpenRouter LLM
-- Receive concise, document-grounded answers
+## Technology
 
-The system is designed to reduce hallucination by forcing the LLM to answer only from retrieved document context.
-
----
-
-## Architecture Flow
-
-```text
-User uploads PDF
-        |
-        v
-Spring Boot REST API
-        |
-        v
-Apache PDFBox extracts text
-        |
-        v
-Text is split into chunks
-        |
-        v
-Embeddings are generated
-        |
-        v
-Embeddings + metadata are stored in Qdrant
-        |
-        v
-User asks a question
-        |
-        v
-Question is converted into an embedding
-        |
-        v
-Qdrant performs semantic search
-        |
-        v
-Relevant chunks are retrieved
-        |
-        v
-Prompt is built with context + question
-        |
-        v
-OpenRouter LLM generates grounded answer
-        |
-        v
-Answer is returned to user
-```
-
----
-
-## Tech Stack
-
-| Technology | Purpose |
-|---|---|
-| Java 21 | Backend programming language |
-| Spring Boot | REST API and application framework |
+| Component | Role |
+| --- | --- |
+| Java 21, Spring Boot 3 | Application and REST API |
 | Apache PDFBox | PDF text extraction |
-| Qdrant | Vector database for semantic search |
-| OpenRouter API | LLM provider for answer generation |
-| Docker | Running Qdrant locally |
+| Qdrant | Vector collection and similarity search |
+| OpenRouter | Chat completion provider |
 | Maven | Build and dependency management |
+| Docker Compose | Local Qdrant service |
 
----
-
-## Project Structure
-
-```text
-springboot-rag-chatbot/
-|
-├── docker-compose.yml
-├── pom.xml
-├── README.md
-|
-├── src/
-|   ├── main/
-|   |   ├── java/
-|   |   |   └── com/example/rag/
-|   |   |       ├── api/
-|   |   |       |   ├── DocumentController.java
-|   |   |       |   ├── GlobalExceptionHandler.java
-|   |   |       |   └── dto/
-|   |   |       |       ├── AskRequest.java
-|   |   |       |       ├── AskResponse.java
-|   |   |       |       └── UploadResponse.java
-|   |   |       |
-|   |   |       ├── config/
-|   |   |       |   ├── EmbeddingProperties.java
-|   |   |       |   ├── OpenRouterProperties.java
-|   |   |       |   ├── QdrantProperties.java
-|   |   |       |   └── RagProperties.java
-|   |   |       |
-|   |   |       ├── llm/
-|   |   |       |   ├── ChatClient.java
-|   |   |       |   └── OpenRouterChatClient.java
-|   |   |       |
-|   |   |       ├── model/
-|   |   |       |   ├── DocumentChunk.java
-|   |   |       |   └── SearchResult.java
-|   |   |       |
-|   |   |       ├── service/
-|   |   |       |   ├── DocumentIngestionService.java
-|   |   |       |   ├── EmbeddingClient.java
-|   |   |       |   ├── HashingEmbeddingClient.java
-|   |   |       |   ├── PdfTextExtractor.java
-|   |   |       |   ├── PromptBuilder.java
-|   |   |       |   ├── QuestionAnsweringService.java
-|   |   |       |   └── TextChunker.java
-|   |   |       |
-|   |   |       ├── vector/
-|   |   |       |   ├── QdrantVectorStore.java
-|   |   |       |   └── VectorStore.java
-|   |   |       |
-|   |   |       └── RagChatbotApplication.java
-|   |   |
-|   |   └── resources/
-|   |       └── application.yml
-|   |
-|   └── test/
-|       └── java/
-|           └── com/example/rag/
-```
-
----
-
-## RAG Pipeline Explained
-
-### 1. PDF Upload
-
-The user uploads a PDF file using the `/upload` API. The backend receives the file and validates that it is a supported PDF document.
-
-### 2. Text Extraction
-
-Apache PDFBox reads the PDF and extracts plain text. This converts the document into a format that can be processed by the RAG pipeline.
-
-### 3. Text Chunking
-
-Large documents are split into smaller chunks. Chunking is important because LLMs and embedding models work better with focused pieces of text instead of very large documents.
-
-### 4. Embedding Generation
-
-Each text chunk is converted into a numerical vector called an embedding. Embeddings represent the meaning of the text and allow semantic search.
-
-### 5. Vector Storage in Qdrant
-
-The generated embeddings are stored in Qdrant along with metadata such as:
-
-- Document ID
-- Document name
-- Chunk index
-- Original chunk text
-
-### 6. Question Processing
-
-When a user asks a question, the question is also converted into an embedding.
-
-### 7. Semantic Search
-
-Qdrant compares the question embedding with stored document embeddings and returns the most relevant chunks.
-
-### 8. Prompt Building
-
-The system builds a prompt using:
-
-- Retrieved document chunks
-- User question
-- Strict instructions to answer only from the provided context
-
-### 9. LLM Answer Generation
-
-The prompt is sent to OpenRouter API. The configured LLM generates a final answer based only on the retrieved document context.
-
-### 10. Grounded Response
-
-If the retrieved context is not enough, the system returns:
-
-```text
-I don't know based on the provided documents.
-```
-
----
-
-## API Endpoints
-
-### Upload PDF
-
-```http
-POST /upload
-```
-
-Uploads a PDF document, extracts text, chunks it, generates embeddings, and stores them in Qdrant.
-
-#### Request
-
-```http
-Content-Type: multipart/form-data
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| file | PDF | Yes | PDF document to upload |
-
-#### Example Response
-
-```json
-{
-  "documentId": "7f0e7c5a-9a41-4f1e-8b0a-123456789abc",
-  "fileName": "sample.pdf",
-  "chunksStored": 18
-}
-```
-
-### Ask Question
-
-```http
-POST /ask
-```
-
-Accepts a natural language question, retrieves relevant chunks from Qdrant, sends context to OpenRouter, and returns a grounded answer.
-
-#### Request
-
-```http
-Content-Type: application/json
-```
-
-#### Example Request
-
-```json
-{
-  "question": "What is the main topic of this document?",
-  "topK": 5
-}
-```
-
-#### Example Response
-
-```json
-{
-  "answer": "The document mainly discusses retrieval-augmented generation and how it improves question answering using external document context.",
-  "sources": [
-    {
-      "documentName": "sample.pdf",
-      "chunkIndex": 2,
-      "score": 0.82,
-      "text": "Retrieval-augmented generation combines semantic search with language models..."
-    }
-  ]
-}
-```
-
----
-
-## Setup Instructions
-
-### Prerequisites
-
-Make sure you have the following installed:
+## Prerequisites
 
 - Java 21
-- Maven
-- Docker
-- OpenRouter API key
+- Maven 3.6.3 or newer
+- Docker with the Compose plugin
+- An OpenRouter API key for answer generation
 
-### 1. Clone the Repository
+## Run locally
+
+Clone the repository and enter its directory:
 
 ```bash
-git clone https://github.com/your-username/springboot-rag-chatbot.git
-cd springboot-rag-chatbot
+git clone https://github.com/vonmiller1/rag-chatbots.git
+cd rag-chatbots
 ```
 
-### 2. Start Qdrant with Docker
+Start Qdrant:
 
 ```bash
 docker compose up -d
 ```
 
-Qdrant will run at:
+Set the OpenRouter key in the shell where the application will run.
 
-```text
-http://localhost:6333
-```
-
-### 3. Configure Environment Variables
-
-Set your OpenRouter API key:
-
-#### Windows PowerShell
+PowerShell:
 
 ```powershell
-$env:OPENROUTER_API_KEY="your-openrouter-api-key"
+$env:OPENROUTER_API_KEY = "your-openrouter-api-key"
 ```
 
-#### macOS/Linux
+macOS / Linux:
 
 ```bash
 export OPENROUTER_API_KEY="your-openrouter-api-key"
 ```
 
-### 4. Configure Application
-
-Update `src/main/resources/application.yml` if needed:
-
-```yaml
-openrouter:
-  base-url: https://openrouter.ai/api/v1
-  api-key: ${OPENROUTER_API_KEY}
-  model: openai/gpt-4o-mini
-
-qdrant:
-  base-url: http://localhost:6333
-  collection-name: document_chunks
-
-rag:
-  default-top-k: 5
-  max-context-chars: 7000
-  min-relevance-score: 0.15
-```
-
-The LLM model can be changed without modifying business logic.
-
-Examples:
-
-```yaml
-openrouter:
-  model: openai/gpt-4o
-```
-
-```yaml
-openrouter:
-  model: anthropic/claude-3.5-sonnet
-```
-
-```yaml
-openrouter:
-  model: mistralai/mistral-large
-```
-
-### 5. Run the Application
+Start the service:
 
 ```bash
 mvn spring-boot:run
 ```
 
-The application will start at:
+The API listens on `http://localhost:8080`. Swagger UI is available at `http://localhost:8080/swagger-ui/index.html`; the Actuator health endpoint is `http://localhost:8080/actuator/health`.
 
-```text
-http://localhost:8080
-```
+Qdrant is configured at `http://localhost:6333`. Compose stores its data in the named `qdrant_data` volume, so uploaded vectors persist across container restarts.
 
-Swagger UI is available at:
+## Configuration
 
-```text
-http://localhost:8080/swagger-ui/index.html
-```
+Defaults are in [`src/main/resources/application.yml`](src/main/resources/application.yml). Override them with Spring Boot configuration or environment variables:
 
----
+| Setting | Default | Description |
+| --- | --- | --- |
+| `OPENROUTER_API_KEY` | Empty | OpenRouter bearer token; required when a question reaches answer generation |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible API base URL |
+| `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | Chat model identifier |
+| `QDRANT_BASE_URL` | `http://localhost:6333` | Qdrant HTTP endpoint |
+| `QDRANT_COLLECTION_NAME` | `document_chunks` | Collection created and queried by the application |
+| `RAG_CHUNK_SIZE` | `900` | Target text chunk size |
+| `RAG_CHUNK_OVERLAP` | `150` | Overlap between adjacent chunks |
+| `RAG_DEFAULT_TOP_K` | `5` | Number of candidate passages to retrieve by default |
+| `RAG_MAX_CONTEXT_CHARS` | `7000` | Maximum context size used when building the prompt |
+| `RAG_MIN_RELEVANCE_SCORE` | `0.15` | Minimum similarity score for a source to be included |
+| `EMBEDDING_DIMENSION` | `384` | Vector length; must match the Qdrant collection configuration |
 
-## Example Usage
+The keys above follow Spring Boot's environment-variable binding conventions for the YAML property names. The application creates its Qdrant collection at startup if it is missing. Changing the embedding dimension for an existing collection requires recreating that collection and re-indexing its documents.
+
+## API
 
 ### Upload a PDF
+
+`POST /upload` — multipart form upload with a required `file` field. Only non-empty files whose names end in `.pdf` are accepted.
 
 ```bash
 curl -X POST http://localhost:8080/upload \
   -F "file=@sample.pdf"
 ```
 
-Windows PowerShell:
+Example response:
 
-```powershell
-curl.exe -X POST http://localhost:8080/upload `
-  -F "file=@C:\path\sample.pdf"
+```json
+{
+  "documentId": "generated-document-id",
+  "fileName": "sample.pdf",
+  "chunksStored": 18
+}
 ```
 
-### Ask a Question
+### Ask a question
+
+`POST /ask` — JSON body with a non-blank `question` and optional `topK` (integer from 1 to 20).
 
 ```bash
 curl -X POST http://localhost:8080/ask \
   -H "Content-Type: application/json" \
-  -d '{
-    "question": "Summarize the key points from the document.",
-    "topK": 5
-  }'
+  -d '{"question":"What is the main topic of the document?","topK":5}'
 ```
 
-Windows PowerShell:
+Example response:
 
-```powershell
-curl.exe -X POST http://localhost:8080/ask `
-  -H "Content-Type: application/json" `
-  -d "{\"question\":\"Summarize the key points from the document.\",\"topK\":5}"
+```json
+{
+  "answer": "The document discusses ...",
+  "sources": [
+    {
+      "documentName": "sample.pdf",
+      "chunkIndex": 2,
+      "score": 0.82,
+      "text": "A retrieved passage from the document ..."
+    }
+  ]
+}
 ```
 
----
+Questions search the configured collection; the current API does not scope searches to a particular `documentId`.
 
-## Why This Project Matters
+## Project layout
 
-This project demonstrates core skills used in modern AI backend systems:
+```text
+src/
+├── main/
+│   ├── java/com/example/rag/
+│   │   ├── api/          # REST endpoints, DTOs, and error handling
+│   │   ├── config/       # Typed application settings and HTTP clients
+│   │   ├── llm/          # Chat client and OpenRouter integration
+│   │   ├── service/      # Ingestion, PDF extraction, chunking, and Q&A
+│   │   └── vector/       # Vector-store interface and Qdrant adapter
+│   └── resources/
+│       └── application.yml
+└── test/                 # Service unit tests
+```
 
-- Building REST APIs with Spring Boot
-- Processing documents with Java
-- Designing a RAG pipeline
-- Using vector databases for semantic search
-- Integrating with LLM APIs
-- Preventing hallucination through grounded context
-- Separating responsibilities with clean architecture
-- Designing systems that can be extended for production use
+## Current limitations
 
-It is suitable as a foundation for:
+- Hashing embeddings are useful as a dependency-free baseline but do not provide the semantic quality of a trained embedding model.
+- Documents share one collection; there is no user isolation, authentication, or document-specific search endpoint.
+- Ingestion is synchronous, and the API supports PDF files only.
+- The service does not yet include operational safeguards such as rate limiting, malware scanning, or a production secret-management strategy.
 
-- Document search systems
-- Internal knowledge base assistants
-- Legal document Q&A
-- HR policy assistants
-- Research paper Q&A tools
-- Customer support knowledge assistants
+Do not expose the service or Qdrant publicly without adding appropriate access controls and operational protections.
 
----
+## Development
 
-## Future Improvements
+Run the unit test suite with:
 
-- Replace local embedding logic with a production embedding model
-- Add authentication and authorization
-- Store document metadata in PostgreSQL
-- Add document delete and re-index APIs
-- Add support for DOCX, TXT, and HTML files
-- Add async document ingestion using message queues
-- Add reranking for better retrieval quality
-- Add streaming responses from OpenRouter
-- Add user-specific document collections
-- Add observability with logs, metrics, and tracing
-- Add integration tests with Testcontainers
-- Add Dockerfile for the Spring Boot application
-- Deploy using Kubernetes or cloud platforms
+```bash
+mvn test
+```
 
----
-
-## Production Considerations
-
-For a production deployment, consider adding:
-
-- API authentication
-- Rate limiting
-- Request validation
-- File size limits
-- Virus scanning for uploaded files
-- Retry and timeout handling for external APIs
-- Centralized logging
-- Monitoring and alerting
-- Secure secret management
-- Backup strategy for Qdrant data
-
----
-
-## License
-
-This project is intended for learning, experimentation, and portfolio use.
-
----
-
-## Author
-
-Built as a production-style Spring Boot RAG backend project for document-based question answering.
+See [plan.md](plan.md) for prioritized next steps and suggested completion criteria.
