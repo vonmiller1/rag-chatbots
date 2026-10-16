@@ -1,0 +1,37 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: springboot-rag-chatbot
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+rag:
+  chunk-size: 900
+  chunk-overlap: 150
+  default-top-k: 5
+  max-context-chars: 7000
+  min-relevance-score: 0.15
+
+embedding:
+  dimension: 384
+
+qdrant:
+  base-url: http://localhost:6333
+  collection-name: document_chunks
+
+openrouter:
+  base-url: https://openrouter.ai/api/v1
+  api-key: ${OPENROUTER_API_KEY:}
+  model: openai/gpt-4o-mini
+  temperature: 0.1
+  timeout-seconds: 60
