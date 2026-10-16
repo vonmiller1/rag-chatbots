@@ -30,6 +30,9 @@ public class DocumentController {
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public UploadResponse upload(@RequestPart("file") MultipartFile file) throws IOException {
+        if (file == null) {
+            throw new IllegalArgumentException("Uploaded file is required.");
+        }
         return ingestionService.ingest(file);
     }
 
