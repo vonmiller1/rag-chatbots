@@ -1,11 +1,15 @@
 package com.example.rag.llm;
 
 import com.example.rag.config.OpenRouterProperties;
+import io.netty.channel.ChannelOption;
+import java.time.Duration;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 
 @Service
 public class OpenRouterChatClient implements ChatClient {
@@ -13,9 +17,13 @@ public class OpenRouterChatClient implements ChatClient {
     private final WebClient webClient;
     private final OpenRouterProperties properties;
 
-    public OpenRouterChatClient(WebClient.Builder webClientBuilder, OpenRouterProperties properties) {
+    public OpenRouterChatClient(OpenRouterProperties properties) {
         this.properties = properties;
-        this.webClient = webClientBuilder
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
+                .responseTimeout(Duration.ofSeconds(properties.timeoutSeconds()));
+        this.webClient = WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .baseUrl(properties.baseUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
