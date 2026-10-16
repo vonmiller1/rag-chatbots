@@ -18,11 +18,13 @@ public class PromptBuilder {
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < results.size(); i++) {
             SearchResult result = results.get(i);
+            String documentName = result.documentName() == null ? "unknown" : result.documentName();
+            String passage = result.text() == null ? "" : result.text();
             String block = """
                     Source %d | document=%s | chunk=%d
                     %s
 
-                    """.formatted(i + 1, result.documentName(), result.chunkIndex(), result.text());
+                    """.formatted(i + 1, documentName, result.chunkIndex(), passage);
 
             if (context.length() + block.length() > properties.maxContextChars()) {
                 break;
