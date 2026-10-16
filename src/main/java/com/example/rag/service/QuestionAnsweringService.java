@@ -32,8 +32,9 @@ public class QuestionAnsweringService {
     }
 
     public AskResponse answer(AskRequest request) {
+        String question = request.question().trim();
         int topK = request.topK() == null ? properties.defaultTopK() : request.topK();
-        List<SearchResult> results = vectorStore.search(request.question(), topK).stream()
+        List<SearchResult> results = vectorStore.search(question, topK).stream()
                 .filter(result -> result.score() >= properties.minRelevanceScore())
                 .toList();
 
@@ -41,7 +42,7 @@ public class QuestionAnsweringService {
             return new AskResponse(UNKNOWN_ANSWER, List.of());
         }
 
-        String prompt = promptBuilder.build(request.question(), results);
+        String prompt = promptBuilder.build(question, results);
         String answer = chatClient.complete(prompt);
 
         List<AskResponse.SourceChunk> sources = results.stream()
