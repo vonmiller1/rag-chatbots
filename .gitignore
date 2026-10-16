@@ -1,6 +1,7 @@
 target/
 .idea/
 .vscode/
+.kilo/
 *.iml
 .env
 application-local.yml
