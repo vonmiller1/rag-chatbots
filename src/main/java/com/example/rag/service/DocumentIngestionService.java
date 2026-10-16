@@ -38,7 +38,14 @@ public class DocumentIngestionService {
 
         String documentId = UUID.randomUUID().toString();
         String text = pdfTextExtractor.extract(file.getInputStream());
+        if (text.isBlank()) {
+            throw new IllegalArgumentException(
+                    "The PDF contains no extractable text. Scanned image-only PDFs are not supported.");
+        }
         List<String> chunks = textChunker.split(text);
+        if (chunks.isEmpty()) {
+            throw new IllegalArgumentException("The PDF could not be split into searchable text chunks.");
+        }
 
         List<DocumentChunk> documentChunks = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
