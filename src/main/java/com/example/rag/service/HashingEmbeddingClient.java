@@ -40,12 +40,18 @@ public class HashingEmbeddingClient implements EmbeddingClient {
         return properties.dimension();
     }
 
-    private byte[] sha256(String token) {
+    private static final ThreadLocal<MessageDigest> SHA_256 = ThreadLocal.withInitial(() -> {
         try {
-            return MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is required by the JVM", exception);
         }
+    });
+
+    private byte[] sha256(String token) {
+        MessageDigest digest = SHA_256.get();
+        digest.reset();
+        return digest.digest(token.getBytes(StandardCharsets.UTF_8));
     }
 
     private int toInt(byte[] bytes, int offset) {
